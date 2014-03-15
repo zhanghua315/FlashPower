@@ -1,10 +1,12 @@
-#!/usr/bin/env python
+# -- coding: utf-8 --
 
 import PySide
 from PySide import QtCore, QtGui
 import pyqtgraph as pg
 import application_rc
 from ui import Ui_FlashPower
+import numpy as np
+import scipy.ndimage as ndi
 
 
 class MainWindow(QtGui.QMainWindow):
@@ -12,8 +14,8 @@ class MainWindow(QtGui.QMainWindow):
         super(MainWindow, self).__init__()
 
         self.curFile = ''
-        self.ui = QtGui.QWidget()
-        Ui_FlashPower().setupUi(self.ui)
+        self.ui = Ui_FlashPower()
+        self.ui.setupUi(self.ui)
         self.setCentralWidget(self.ui)
 
         self.createActions()
@@ -25,6 +27,19 @@ class MainWindow(QtGui.QMainWindow):
 
         self.setCurrentFile('')
         self.setUnifiedTitleAndToolBarOnMac(True)
+
+        #init plot color
+        self.desiredPlot = self.ui.mainplot.plot(name=u'期望值')
+        self.actualPlot = self.ui.mainplot.plot(name=u'实际值')
+        self.desiredPlot.setPen((0,255,0))
+        self.actualPlot.setPen((255,0,0))
+        self.desiredPlot.setData([1,2,3],[2,3,4])
+        self.actualPlot.setData([2,3,4],[1,2,3])
+
+        #connect signal to slot
+        self.ui.cmd_lineedit.returnPressed.connect(self.on_editingFinished)
+        self.proxy = pg.SignalProxy(self.ui.graphWin.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
+        self.proxy2 = pg.SignalProxy(self.ui.graphWin.scene().sigMouseClicked,rateLimit=60,slot=self.mouse_clicked)
 
     def maybeSave(self):
       return True
@@ -132,6 +147,7 @@ class MainWindow(QtGui.QMainWindow):
         settings.setValue("size", self.size())
 
     def loadFile(self, fileName):
+        #TODO add logic
         file = QtCore.QFile(fileName)
         if not file.open(QtCore.QFile.ReadOnly | QtCore.QFile.Text):
             QtGui.QMessageBox.warning(
@@ -147,6 +163,7 @@ class MainWindow(QtGui.QMainWindow):
         self.statusBar().showMessage("File loaded", 2000)
 
     def saveFile(self, fileName):
+        #TODO add logic
         file = QtCore.QFile(fileName)
         if not file.open(QtCore.QFile.WriteOnly | QtCore.QFile.Text):
             QtGui.QMessageBox.warning(
@@ -171,6 +188,7 @@ class MainWindow(QtGui.QMainWindow):
         if self.curFile:
             shownName = self.strippedName(self.curFile)
         else:
+            #TODO change default show name
             shownName = 'untitled.txt'
 
         self.setWindowTitle("%s[*] - gl-power" % shownName)
@@ -178,6 +196,23 @@ class MainWindow(QtGui.QMainWindow):
     def strippedName(self, fullFileName):
         return QtCore.QFileInfo(fullFileName).fileName()
 
+    #Slot Funciton
+    def on_editingFinished(self):
+        #TODO add send cmd logic
+        print "edit finish"
+
+    def mouse_moved(self,event):
+        pos = event[0]
+        if self.ui.mainplot.sceneBoundingRect().contains(pos):
+            mousePoint = self.ui.mainplot.vb.mapSceneToView(pos)
+            self.ui.label.setText("<span style='font-size: 12pt'>X:%0.1f "
+                                  "<span style='color:green'>Y1:%0.1f</span> " #TODO change y1,y2 value
+                                  "<span style='color:red'>Y2:%0.1f</span>" % (mousePoint.x(),mousePoint.y(),mousePoint.y()))
+            self.ui.vLine.setPos(mousePoint.x())
+            self.ui.hLine.setPos(mousePoint.y())
+
+    def mouse_clicked(self,event):
+        print "mouse clicked"
 
 if __name__ == '__main__':
 
