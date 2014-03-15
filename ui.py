@@ -10,7 +10,6 @@
 import PySide
 from PySide import QtCore, QtGui
 import pyqtgraph as pg
-from customViewBox import customWindow
 
 class Ui_FlashPower(QtGui.QWidget):
     def setupUi(self, FlashPower):
@@ -51,7 +50,7 @@ class Ui_FlashPower(QtGui.QWidget):
         self.mainplot.setYRange(0,30)
         self.mainplot.showGrid(True,True,0.5)
         self.mainplot.setLabel('left','Voltage',units='V')
-        self.mainplot.setLabel('bottom','Time',units='ms')
+        self.mainplot.setLabel('bottom','Time',units='S')
         self.vLine = pg.InfiniteLine(angle=90, movable=False)
         self.hLine = pg.InfiniteLine(angle=0, movable=False)
         self.mainplot.addItem(self.vLine,ignoreBounds=True)

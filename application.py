@@ -33,8 +33,8 @@ class MainWindow(QtGui.QMainWindow):
         self.actualPlot = self.ui.mainplot.plot(name=u'实际值')
         self.desiredPlot.setPen((0,255,0))
         self.actualPlot.setPen((255,0,0))
-        self.desiredPlot.setData([1,2,3],[2,3,4])
-        self.actualPlot.setData([2,3,4],[1,2,3])
+        self.clickedX = []
+        self.clickedY = []
 
         #connect signal to slot
         self.ui.cmd_lineedit.returnPressed.connect(self.on_editingFinished)
@@ -201,18 +201,23 @@ class MainWindow(QtGui.QMainWindow):
         #TODO add send cmd logic
         print "edit finish"
 
-    def mouse_moved(self,event):
+    def mouse_moved(self, event):
         pos = event[0]
         if self.ui.mainplot.sceneBoundingRect().contains(pos):
             mousePoint = self.ui.mainplot.vb.mapSceneToView(pos)
-            self.ui.label.setText("<span style='font-size: 12pt'>X:%0.1f "
-                                  "<span style='color:green'>Y1:%0.1f</span> " #TODO change y1,y2 value
-                                  "<span style='color:red'>Y2:%0.1f</span>" % (mousePoint.x(),mousePoint.y(),mousePoint.y()))
+            self.ui.label.setText("<span style='font-size: 12pt'>X:%0.6f "
+                                  "<span style='color:green'>Y1:%0.6f</span> " #TODO change y1,y2 value
+                                  "<span style='color:red'>Y2:%0.6f</span>" % (mousePoint.x(),mousePoint.y(),mousePoint.y()))
             self.ui.vLine.setPos(mousePoint.x())
             self.ui.hLine.setPos(mousePoint.y())
 
-    def mouse_clicked(self,event):
-        print "mouse clicked"
+    def mouse_clicked(self, event):
+        if event[0].button() == QtCore.Qt.LeftButton:
+            mousePoint = self.ui.mainplot.vb.mapSceneToView(event[0].scenePos())
+            self.clickedX.append(mousePoint.x())
+            self.clickedY.append(mousePoint.y())
+            self.desiredPlot.setData(self.clickedX,self.clickedY)
+
 
 if __name__ == '__main__':
 
