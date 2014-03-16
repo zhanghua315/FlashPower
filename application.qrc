@@ -6,6 +6,7 @@
         <file>images/open.png</file>
         <file>images/paste.png</file>
         <file>images/save.png</file>
-        <file>images/volt.png</file>
+        <file>images/begin.png</file>
+        <file>images/stop.png</file>
     </qresource>
 </RCC>

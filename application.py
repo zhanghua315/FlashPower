@@ -17,7 +17,7 @@ class MainWindow(QtGui.QMainWindow):
         self.ui = Ui_FlashPower()
         self.ui.setupUi(self.ui)
         self.setCentralWidget(self.ui)
-
+        self.contextMenu = None
         self.createActions()
         self.createMenus()
         self.createToolBars()
@@ -28,8 +28,10 @@ class MainWindow(QtGui.QMainWindow):
         self.setCurrentFile('')
         self.setUnifiedTitleAndToolBarOnMac(True)
 
-        #init plot color
+        #init plot c
         self.desiredPlot = self.ui.mainplot.plot(name=u'期望值')
+        self.desiredPlot.curve.setClickable(True)
+        self.ui.mainplot.setMenuEnabled(True,enableViewBoxMenu=None)
         self.actualPlot = self.ui.mainplot.plot(name=u'实际值')
         self.desiredPlot.setPen((0,255,0))
         self.actualPlot.setPen((255,0,0))
@@ -38,8 +40,16 @@ class MainWindow(QtGui.QMainWindow):
 
         #connect signal to slot
         self.ui.cmd_lineedit.returnPressed.connect(self.on_editingFinished)
-        self.proxy = pg.SignalProxy(self.ui.graphWin.scene().sigMouseMoved, rateLimit=60, slot=self.mouse_moved)
-        self.proxy2 = pg.SignalProxy(self.ui.graphWin.scene().sigMouseClicked,rateLimit=60,slot=self.mouse_clicked)
+        self.ui.graphWin.scene().sigMouseMoved.connect(self.mouse_moved)
+        self.ui.graphWin.scene().sigMouseClicked.connect(self.mouse_clicked)
+        self.desiredPlot.sigClicked.connect(self.item_clicked)
+
+    def item_clicked(self):
+        print "item clicked"
+    def points_clicked(self,points):
+        print "points"
+        print len(points)
+        print points
 
     def maybeSave(self):
       return True
@@ -83,6 +93,11 @@ class MainWindow(QtGui.QMainWindow):
             "modern GUI applications using Qt, with a menu bar, "
             "toolbars, and a status bar.")
 
+    def begin(self):
+        print "begin output"
+
+    def stop(self):
+        print "Stop output"
 
     def createActions(self):
         self.newAct = QtGui.QAction(QtGui.QIcon(':/images/new.png'), "&New",
@@ -113,6 +128,11 @@ class MainWindow(QtGui.QMainWindow):
             '&About', self, statusTip="Show the application's About box",
             triggered=self.about)
 
+        self.beginAct = QtGui.QAction(QtGui.QIcon(':/images/begin.png'),
+                                      "&Begin",self,statusTip="Begin output",triggered=self.begin)
+        self.stopAct = QtGui.QAction(QtGui.QIcon(':/images/stop.png'),
+                                     "S&top",self,statusTip="Stop output",triggered=self.stop)
+
 
     def createMenus(self):
         self.fileMenu = self.menuBar().addMenu("&File")
@@ -120,6 +140,9 @@ class MainWindow(QtGui.QMainWindow):
         self.fileMenu.addAction(self.openAct)
         self.fileMenu.addAction(self.saveAct)
         self.fileMenu.addAction(self.saveAsAct)
+        self.fileMenu.addSeparator()
+        self.fileMenu.addAction(self.beginAct)
+        self.fileMenu.addAction(self.stopAct)
         self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.exitAct)
         self.helpMenu = self.menuBar().addMenu("&Help")
@@ -130,6 +153,9 @@ class MainWindow(QtGui.QMainWindow):
         self.fileToolBar.addAction(self.newAct)
         self.fileToolBar.addAction(self.openAct)
         self.fileToolBar.addAction(self.saveAct)
+        self.fileToolBar.addSeparator()
+        self.fileToolBar.addAction(self.beginAct)
+        self.fileToolBar.addAction(self.stopAct)
 
     def createStatusBar(self):
         self.statusBar().showMessage("Ready")
@@ -201,22 +227,54 @@ class MainWindow(QtGui.QMainWindow):
         #TODO add send cmd logic
         print "edit finish"
 
+    def setCurve(self):
+        #TODO add curve logic
+        print "set Curve"
+
     def mouse_moved(self, event):
-        pos = event[0]
+        pos = event
         if self.ui.mainplot.sceneBoundingRect().contains(pos):
             mousePoint = self.ui.mainplot.vb.mapSceneToView(pos)
-            self.ui.label.setText("<span style='font-size: 12pt'>X:%0.6f "
-                                  "<span style='color:green'>Y1:%0.6f</span> " #TODO change y1,y2 value
-                                  "<span style='color:red'>Y2:%0.6f</span>" % (mousePoint.x(),mousePoint.y(),mousePoint.y()))
+            self.ui.label.setText("<span style='font-size: 12pt'>X:%0.6f   "
+                                  "<span style='color:green'>  Y1:%0.6f</span> " #TODO change y1,y2 value
+                                  "<span style='color:red'>  Y2:%0.6f</span>"
+                                  % (mousePoint.x(),mousePoint.y(),mousePoint.y()))
             self.ui.vLine.setPos(mousePoint.x())
             self.ui.hLine.setPos(mousePoint.y())
 
     def mouse_clicked(self, event):
-        if event[0].button() == QtCore.Qt.LeftButton:
-            mousePoint = self.ui.mainplot.vb.mapSceneToView(event[0].scenePos())
+        if event.button() == QtCore.Qt.LeftButton and event.double():
+            mousePoint = self.ui.mainplot.vb.mapSceneToView(event.scenePos())
             self.clickedX.append(mousePoint.x())
             self.clickedY.append(mousePoint.y())
             self.desiredPlot.setData(self.clickedX,self.clickedY)
+            event.accept()
+        elif event.button() == QtCore.Qt.RightButton:
+            print "contextMenu"
+            if self.raiseContextMenu(event):
+                print "accept"
+                event.accept()
+
+
+    def raiseContextMenu(self, ev):
+        menu = self.getMenu(ev)
+        if menu is None:
+            return False
+        menu = self.ui.mainplot.scene().addParentContextMenus(self.ui.mainplot.vb, menu, ev)
+        pos = ev.screenPos()
+        menu.popup(QtCore.QPoint(pos.x(), pos.y()))
+        return True
+
+    def getMenu(self,event):
+        #if self.contextMenu is None:
+        self.contextMenu = self.ui.mainplot.vb.getMenu(event)
+        self.curveAct = QtGui.QAction("set curve",self.contextMenu)
+        self.curveAct.triggered.connect(self.setCurve)
+        self.contextMenu.addAction(self.curveAct)
+        self.contextMenu.curveAct = self.curveAct
+        return self.contextMenu
+
+
 
 
 if __name__ == '__main__':
