@@ -7,7 +7,6 @@
 #
 # WARNING! All changes made in this file will be lost!
 
-import PySide
 from PySide import QtCore, QtGui
 import pyqtgraph as pg
 

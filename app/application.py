@@ -1,6 +1,5 @@
 # -- coding: utf-8 --
 
-import PySide
 from PySide import QtCore, QtGui
 import pyqtgraph as pg
 import application_rc
@@ -24,6 +23,7 @@ class MainWindow(QtGui.QMainWindow):
         self.createMenus()
         self.createToolBars()
         self.createStatusBar()
+        self.pointStack = []
         self.precision = 3  # 时间最小分辨率，默认为3（1ms）。
         self.readSettings()
         self.modified = False
@@ -114,6 +114,26 @@ class MainWindow(QtGui.QMainWindow):
             "modern GUI applications using Qt, with a menu bar, "
             "toolbars, and a status bar.")
 
+    def back(self):
+        try:
+            x = self.clickedX.pop()
+            y = self.clickedY.pop()
+            self.pointStack.append((x,y))
+            self.desiredPlot.setData(self.clickedX,self.clickedY)
+            self.curArrow.setPos(x,y)
+        except IndexError:
+            self.log.warn("undo:pop from  a empty list")
+
+    def forward(self):
+        try:
+            x,y = self.pointStack.pop()
+            self.clickedX.append(x)
+            self.clickedY.append(y)
+            self.desiredPlot.setData(self.clickedX,self.clickedY)
+            self.curArrow.setPos(x,y)
+        except IndexError:
+            self.log.warn("redo,stack empty.no data to redo")
+
     def createOutputWave(self):
         """
             根据用户点击的坐标点生成最终的输出波形
@@ -192,6 +212,12 @@ class MainWindow(QtGui.QMainWindow):
         self.stopAct = QtGui.QAction(QtGui.QIcon(':/images/stop.png'),
                                      "S&top",self,statusTip="Stop output",triggered=self.stop)
         self.logAct  = QtGui.QAction("&Log",self,statusTip="Start/Stop Log",triggered=self.switchLog)
+        self.backAct = QtGui.QAction(QtGui.QIcon(":/images/back.png"),"Undo",self,
+                                     shortcut=QtGui.QKeySequence.Undo,statusTip="Undo insert output point",
+                                     triggered=self.back)
+        self.forwardAct = QtGui.QAction(QtGui.QIcon(":/images/forward.png"),"Redo",self,
+                                     shortcut=QtGui.QKeySequence.Redo,statusTip="Redo insert output point",
+                                     triggered=self.forward)
 
 
     def createMenus(self):
@@ -207,6 +233,11 @@ class MainWindow(QtGui.QMainWindow):
         self.fileMenu.addAction(self.logAct)
         self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.exitAct)
+        ########################################
+        self.editMenu = self.menuBar().addMenu("&Edit")
+        self.editMenu.addAction(self.backAct)
+        self.editMenu.addAction(self.forwardAct)
+        ########################################
         self.helpMenu = self.menuBar().addMenu("&Help")
         self.helpMenu.addAction(self.aboutAct)
 
@@ -215,6 +246,9 @@ class MainWindow(QtGui.QMainWindow):
         self.fileToolBar.addAction(self.newAct)
         self.fileToolBar.addAction(self.openAct)
         self.fileToolBar.addAction(self.saveAct)
+        self.fileToolBar.addSeparator()
+        self.fileToolBar.addAction(self.backAct)
+        self.fileToolBar.addAction(self.forwardAct)
         self.fileToolBar.addSeparator()
         self.fileToolBar.addAction(self.beginAct)
         self.fileToolBar.addAction(self.stopAct)
@@ -316,6 +350,17 @@ class MainWindow(QtGui.QMainWindow):
             self.ui.vLine.setPos(mousePoint.x())
             self.ui.hLine.setPos(mousePoint.y())
 
+    def addOutputPoint(self,x,y):
+        self.modified = True
+        self.clickedX.append(x)
+        self.clickedY.append(y)
+        if len(self.clickedX) >= 2:
+            ratio = (self.clickedY[-1] - self.clickedY[-2]) / (self.clickedX[-1] - self.clickedX[-2])
+            # y= y[-2] + (y[-1]-y[-2])/(x[-1]-x[-2]) * (x-x[-2])
+            ratio = str(self.clickedY[-2])+" + "+str(ratio) + " * (x - " + str(self.clickedX[-2]) + ")"
+            self.strFunc.append(ratio)
+        self.curArrow.setPos(x,y)
+
     def mouse_clicked(self, event):
         if event.button() == QtCore.Qt.LeftButton and event.double():
             mousePoint = self.ui.mainplot.vb.mapSceneToView(event.scenePos())
@@ -330,16 +375,8 @@ class MainWindow(QtGui.QMainWindow):
                 self.statusBar().showMessage("invalid point",2000)
                 return
             else:
-                self.modified = True
-                self.clickedX.append(x)
-                self.clickedY.append(y)
-                if len(self.clickedX) >= 2:
-                    ratio = (self.clickedY[-1] - self.clickedY[-2]) / (self.clickedX[-1] - self.clickedX[-2])
-                    # y= y[-2] + (y[-1]-y[-2])/(x[-1]-x[-2]) * (x-x[-2])
-                    ratio = str(self.clickedY[-2])+" + "+str(ratio) + " * (x - " + str(self.clickedX[-2]) + ")"
-                    self.strFunc.append(ratio)
+                self.addOutputPoint(x,y)
                 self.desiredPlot.setData(self.clickedX,self.clickedY)
-                self.curArrow.setPos(x,y)
             event.accept()
         elif event.button() == QtCore.Qt.RightButton:
             if self.raiseContextMenu(event):

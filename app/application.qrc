@@ -8,5 +8,7 @@
         <file>images/save.png</file>
         <file>images/begin.png</file>
         <file>images/stop.png</file>
+        <file>images/back.png</file>
+        <file>images/forward.png</file>
     </qresource>
 </RCC>
