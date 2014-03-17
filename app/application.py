@@ -6,13 +6,15 @@ import pyqtgraph as pg
 import application_rc
 from ui import Ui_FlashPower
 import numpy as np
-import scipy.ndimage as ndi
+import numexpr as ne
+import logbook
 
 
 class MainWindow(QtGui.QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
-
+        self.enable_log = False
+        self.log = logbook.Logger('MainWindow')
         self.curFile = ''
         self.ui = Ui_FlashPower()
         self.ui.setupUi(self.ui)
@@ -22,55 +24,74 @@ class MainWindow(QtGui.QMainWindow):
         self.createMenus()
         self.createToolBars()
         self.createStatusBar()
-
+        self.precision = 3  # 时间最小分辨率，默认为3（1ms）。
         self.readSettings()
+        self.modified = False
 
         self.setCurrentFile('')
         self.setUnifiedTitleAndToolBarOnMac(True)
 
-        #init plot c
+        #init plot 
         self.desiredPlot = self.ui.mainplot.plot(name=u'期望值')
         self.desiredPlot.curve.setClickable(True)
-        self.ui.mainplot.setMenuEnabled(True,enableViewBoxMenu=None)
         self.actualPlot = self.ui.mainplot.plot(name=u'实际值')
         self.desiredPlot.setPen((0,255,0))
         self.actualPlot.setPen((255,0,0))
         self.clickedX = []
         self.clickedY = []
+        self.strFunc  = []
+        self.x_output = []
+        self.y_output = []
+        self.eventPos = None
+        self.curArrow = pg.ArrowItem(pos=(0, 0), angle=-45)
+        self.ui.mainplot.addItem(self.curArrow)
+        
 
         #connect signal to slot
         self.ui.cmd_lineedit.returnPressed.connect(self.on_editingFinished)
         self.ui.graphWin.scene().sigMouseMoved.connect(self.mouse_moved)
         self.ui.graphWin.scene().sigMouseClicked.connect(self.mouse_clicked)
-        self.desiredPlot.sigClicked.connect(self.item_clicked)
-
-    def item_clicked(self):
-        print "item clicked"
-    def points_clicked(self,points):
-        print "points"
-        print len(points)
-        print points
 
     def maybeSave(self):
-      return True
+        if self.modified:
+            ok = QtGui.QMessageBox.warning(self,self.tr("Warning"), self.tr("Save current file??"),
+                                      QtGui.QMessageBox.Save,QtGui.QMessageBox.Cancel)
+            if ok == QtGui.QMessageBox.Save:
+                return True
+            else :
+                return False
 
     def closeEvent(self, event):
         if self.maybeSave():
+            self.save()
             self.writeSettings()
-            event.accept()
-        else:
-            event.ignore()
+        event.accept()
 
     def newFile(self):
         if self.maybeSave():
-            #self.textEdit.clear()
-            self.setCurrentFile('')
+            self.save()
+        self.modified = False
+        self.clickedX = []
+        self.clickedY = []
+        self.x_output = []
+        self.y_output = []
+        self.desiredPlot.clear()
+        self.actualPlot.clear()
+        self.setCurrentFile('')
 
     def open(self):
         if self.maybeSave():
-            fileName, filtr = QtGui.QFileDialog.getOpenFileName(self)
-            if fileName:
-                self.loadFile(fileName)
+            self.modified = False
+            self.clickedX = []
+            self.clickedY = []
+            self.x_output = []
+            self.y_output = []
+            self.desiredPlot.clear()
+            self.actualPlot.clear()
+            self.save()
+        fileName, filtr = QtGui.QFileDialog.getOpenFileName(self)
+        if fileName:
+            self.loadFile(fileName)
 
     def save(self):
         if self.curFile:
@@ -93,11 +114,49 @@ class MainWindow(QtGui.QMainWindow):
             "modern GUI applications using Qt, with a menu bar, "
             "toolbars, and a status bar.")
 
+    def createOutputWave(self):
+        """
+            根据用户点击的坐标点生成最终的输出波形
+        """
+        self.x_output = []
+        self.y_output = []
+        if self.precision == 3:
+            precision = 0.001
+        if self.precision == 4:
+            precision = 0.0001
+        else:
+            precision = 0.001
+        for i in range(len(self.clickedX)-1):
+            x = np.arange(start=self.clickedX[i],stop=self.clickedX[i+1],step=precision)
+            self.x_output = np.append(self.x_output,x)
+            y = ne.evaluate(self.strFunc[i])
+            self.y_output = np.append(self.y_output,y)
+        
+
     def begin(self):
-        print "begin output"
+        #TODO add Begin Logic
+        if len(self.clickedX) >= 2:
+            self.createOutputWave()
+            self.desiredPlot.setData(self.x_output,self.y_output)
+            #TODO send data into device and send start cmd
+            #TODO start update thread
+        else :
+            self.statusBar().showMessage("not enough data to output.must >= 2 points",2000)
 
     def stop(self):
-        print "Stop output"
+        #TODO send stop cmd
+        #TODO stop updata thread
+        pass
+
+    def switchLog(self):
+        self.enable_log = not self.enable_log
+        if self.enable_log:
+            self.log.level = logbook.DEBUG
+            self.statusBar().showMessage("Log On",2000)
+        else:
+            self.log.level = logbook.ERROR
+            self.statusBar().showMessage("Log Off",2000)
+        
 
     def createActions(self):
         self.newAct = QtGui.QAction(QtGui.QIcon(':/images/new.png'), "&New",
@@ -132,6 +191,7 @@ class MainWindow(QtGui.QMainWindow):
                                       "&Begin",self,statusTip="Begin output",triggered=self.begin)
         self.stopAct = QtGui.QAction(QtGui.QIcon(':/images/stop.png'),
                                      "S&top",self,statusTip="Stop output",triggered=self.stop)
+        self.logAct  = QtGui.QAction("&Log",self,statusTip="Start/Stop Log",triggered=self.switchLog)
 
 
     def createMenus(self):
@@ -143,6 +203,8 @@ class MainWindow(QtGui.QMainWindow):
         self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.beginAct)
         self.fileMenu.addAction(self.stopAct)
+        self.fileMenu.addSeparator()
+        self.fileMenu.addAction(self.logAct)
         self.fileMenu.addSeparator()
         self.fileMenu.addAction(self.exitAct)
         self.helpMenu = self.menuBar().addMenu("&Help")
@@ -164,58 +226,50 @@ class MainWindow(QtGui.QMainWindow):
         settings = QtCore.QSettings("gan0ling Studio", "gl-power")
         pos = settings.value("pos", QtCore.QPoint(200, 200))
         size = settings.value("size", QtCore.QSize(400, 400))
+        self.enable_log = settings.value("enable-log",False)
+        if self.enable_log:
+            self.log.level = logbook.DEBUG
+        else :
+            self.log.level = logbook.ERROR
         self.resize(size)
         self.move(pos)
+        
 
     def writeSettings(self):
         settings = QtCore.QSettings("gan0ling Studio", "gl-power")
         settings.setValue("pos", self.pos())
         settings.setValue("size", self.size())
+        settings.setValue("enable-log",self.enable_log)
 
     def loadFile(self, fileName):
         #TODO add logic
-        file = QtCore.QFile(fileName)
-        if not file.open(QtCore.QFile.ReadOnly | QtCore.QFile.Text):
-            QtGui.QMessageBox.warning(
-                self, "gl-power", "Cannot read file %s:\n%s." % (
-                    fileName, file.errorString()))
-            return
-
-        inf = QtCore.QTextStream(file)
-        QtGui.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-        QtGui.QApplication.restoreOverrideCursor()
-
-        self.setCurrentFile(fileName)
-        self.statusBar().showMessage("File loaded", 2000)
+        npzfile = np.load(fileName)
+        if len(npzfile.files) >= 4:
+            self.clickedX = npzfile['clickedX']
+            self.clickedY = npzfile['clickedY']
+            self.x_output = npzfile['x_output']
+            self.y_output = npzfile['y_output']
+            self.desiredPlot.setData(self.x_output,self.y_output)
+            self.statusBar().showMessage("File loaded", 2000)
+        else :
+            self.statusBar().showMessage("File corrupted or no data",2000)
 
     def saveFile(self, fileName):
         #TODO add logic
-        file = QtCore.QFile(fileName)
-        if not file.open(QtCore.QFile.WriteOnly | QtCore.QFile.Text):
-            QtGui.QMessageBox.warning(
-                self, "gl-power", "Cannot write file %s:\n%s." % (
-                    fileName, file.errorString()))
-            return False
-
-        outf = QtCore.QTextStream(file)
-        QtGui.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-        #outf << self.textEdit.toPlainText()
-        QtGui.QApplication.restoreOverrideCursor()
-
-        self.setCurrentFile(fileName)
+        self.createOutputWave()
+        np.savez_compressed(fileName,clickedX=self.clickedX,clickedY=self.clickedY,
+                            x_output=self.x_output,y_output=self.y_output)
         self.statusBar().showMessage("File saved", 2000)
         return True
 
     def setCurrentFile(self, fileName):
         self.curFile = fileName
-        #self.textEdit.document().setModified(False)
         self.setWindowModified(False)
 
         if self.curFile:
             shownName = self.strippedName(self.curFile)
         else:
-            #TODO change default show name
-            shownName = 'untitled.txt'
+            shownName = 'untitled.npz'
 
         self.setWindowTitle("%s[*] - gl-power" % shownName)
 
@@ -228,16 +282,36 @@ class MainWindow(QtGui.QMainWindow):
         print "edit finish"
 
     def setCurve(self):
-        #TODO add curve logic
-        print "set Curve"
+        if self.eventPos is not None:
+            if len(self.clickedX) >= 2:
+                posX = self.eventPos.x()
+                posY = self.eventPos.y()
+                idx  = 0
+                #查找鼠标右键位置在用户点击的点序列中的位置
+                for i in range(len(self.clickedX)):
+                    if (self.clickedX[i] <= posX) and (self.clickedX[i+1] >= posX):
+                        idx = i
+                        break
+                if (idx == 0) and (i != 0):
+                    #用户点击位置下，还没有设置输出点
+                    return
+                #找到需要更改斜率的线段，调用QInputDialog让用户输入函数
+                text = QtGui.QInputDialog.getText(self,self.tr(u"Function expression"),
+                                                  self.tr("y = "),QtGui.QLineEdit.Normal,
+                                                  "cos(x)")
+                if text[1] and text[0] and ("x" in text[0]):
+                    func = str(text[0]) + " + " +str(self.clickedY[idx])
+                    self.strFunc[i] = func
+                
+                
 
     def mouse_moved(self, event):
         pos = event
         if self.ui.mainplot.sceneBoundingRect().contains(pos):
             mousePoint = self.ui.mainplot.vb.mapSceneToView(pos)
-            self.ui.label.setText("<span style='font-size: 12pt'>X:%0.6f   "
-                                  "<span style='color:green'>  Y1:%0.6f</span> " #TODO change y1,y2 value
-                                  "<span style='color:red'>  Y2:%0.6f</span>"
+            self.ui.label.setText("<span style='font-size: 12pt'>X:%0.4f   "
+                                  "<span style='color:green'>  Y1:%0.4f</span> " #TODO change y1,y2 value
+                                  "<span style='color:red'>  Y2:%0.4f</span>"
                                   % (mousePoint.x(),mousePoint.y(),mousePoint.y()))
             self.ui.vLine.setPos(mousePoint.x())
             self.ui.hLine.setPos(mousePoint.y())
@@ -245,14 +319,31 @@ class MainWindow(QtGui.QMainWindow):
     def mouse_clicked(self, event):
         if event.button() == QtCore.Qt.LeftButton and event.double():
             mousePoint = self.ui.mainplot.vb.mapSceneToView(event.scenePos())
-            self.clickedX.append(mousePoint.x())
-            self.clickedY.append(mousePoint.y())
-            self.desiredPlot.setData(self.clickedX,self.clickedY)
+            x = round(mousePoint.x(),self.precision)
+            y = round(mousePoint.y(),self.precision)
+            #第一次点击的检查
+            if len(self.clickedX) == 0 and x != 0:
+                self.statusBar().showMessage("x value of first point must be zero!!",2000)
+                self.log.warn("mouse_cliked:x value of first point must be zero!!",2000)
+                return 
+            if len(self.clickedX) !=0 and (x <= self.clickedX[-1]):
+                self.statusBar().showMessage("invalid point",2000)
+                return
+            else:
+                self.modified = True
+                self.clickedX.append(x)
+                self.clickedY.append(y)
+                if len(self.clickedX) >= 2:
+                    ratio = (self.clickedY[-1] - self.clickedY[-2]) / (self.clickedX[-1] - self.clickedX[-2])
+                    # y= y[-2] + (y[-1]-y[-2])/(x[-1]-x[-2]) * (x-x[-2])
+                    ratio = str(self.clickedY[-2])+" + "+str(ratio) + " * (x - " + str(self.clickedX[-2]) + ")"
+                    self.strFunc.append(ratio)
+                self.desiredPlot.setData(self.clickedX,self.clickedY)
+                self.curArrow.setPos(x,y)
             event.accept()
         elif event.button() == QtCore.Qt.RightButton:
-            print "contextMenu"
             if self.raiseContextMenu(event):
-                print "accept"
+                self.eventPos = self.ui.mainplot.vb.mapSceneToView(event.scenePos())
                 event.accept()
 
 
@@ -280,8 +371,11 @@ class MainWindow(QtGui.QMainWindow):
 if __name__ == '__main__':
 
     import sys
-
-    app = QtGui.QApplication(sys.argv)
-    mainWin = MainWindow()
-    mainWin.show()
-    sys.exit(app.exec_())
+    from logbook import FileHandler
+    
+    log_handler = FileHandler("FlashPower.log")
+    with log_handler.applicationbound():
+        app = QtGui.QApplication(sys.argv)
+        mainWin = MainWindow()
+        mainWin.show()
+        sys.exit(app.exec_())
